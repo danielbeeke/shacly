@@ -10,10 +10,12 @@
   },
   "dependencies": {
     "@astrojs/react": "^4.4.0",
+    "@fontsource-variable/roboto": "^5.2.8",
     "@types/react": "^19.2.2",
     "@types/react-dom": "^19.2.2",
     "@uidotdev/usehooks": "^2.4.1",
     "astro": "^5.14.5",
+    "jsonld-context-parser": "^3.0.0",
     "n3": "^1.26.0",
     "rdf-data-factory": "^2.0.2",
     "rdf-stores": "^2.1.1",
@@ -24,6 +26,7 @@
     "@rdfjs/types": "^2.0.1",
     "@types/n3": "^1.26.0",
     "prettier": "3.6.2",
-    "prettier-plugin-astro": "0.14.1"
+    "prettier-plugin-astro": "0.14.1",
+    "sass": "^1.93.2"
   }
 }

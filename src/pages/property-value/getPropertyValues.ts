@@ -1,11 +1,12 @@
-import type { NamedNode, Quad, Quad_Subject, Term } from "@rdfjs/types";
+import type { NamedNode, Quad, Quad_Predicate, Quad_Subject, Term } from "@rdfjs/types";
 import type { RdfStore } from "rdf-stores";
 import { DataFactory } from "rdf-data-factory";
 const DF = new DataFactory();
 
-const sh = (localName: string = "") => DF.namedNode("http://www.w3.org/ns/shacl#" + localName);
-const rdf = (localName: string = "") => DF.namedNode("http://www.w3.org/1999/02/22-rdf-syntax-ns#" + localName);
-const rdfs = (localName: string = "") => DF.namedNode("http://www.w3.org/2000/01/rdf-schema#" + localName);
+export const sh = (localName: string = "") => DF.namedNode("http://www.w3.org/ns/shacl#" + localName);
+export const rdf = (localName: string = "") => DF.namedNode("http://www.w3.org/1999/02/22-rdf-syntax-ns#" + localName);
+export const rdfs = (localName: string = "") => DF.namedNode("http://www.w3.org/2000/01/rdf-schema#" + localName);
+export const skos = (localName: string = "") => DF.namedNode("http://www.w3.org/2004/02/skos/core#" + localName);
 
 type Options = {
   focusNode?: Term;
@@ -13,16 +14,26 @@ type Options = {
   dataGraph?: RdfStore;
 };
 
+export type PropertyValue = {
+  path: Quad_Predicate[];
+  valueNodes: Quad[];
+  property: Quad[];
+  type: "shape" | "data";
+  shapesGraph?: RdfStore;
+};
+
 /**
  * What is a property value? See https://github.com/w3c/data-shapes/blob/agenda/ui-tf/meetings/2025-09-30.md
  * What about triples for which no shape is defined?
  */
-export function getPropertyValues({ focusNode, shapesGraph, dataGraph }: Options) {
+export function getPropertyValues({ focusNode, shapesGraph, dataGraph }: Options): PropertyValue[] {
   const targetShapes = getTargetShapes({ focusNode, shapesGraph, dataGraph });
 
-  const propertyValues = [];
+  const propertyValues: PropertyValue[] = [];
+  const subjects: Map<string, Term> = new Map();
 
   for (const targetShape of targetShapes) {
+    if (targetShape.focusNode) subjects.set(targetShape.focusNode.value, targetShape.focusNode);
     const nodeShapeQuads = shapesGraph?.getQuads(targetShape.shapeIri, sh("node"), null) ?? [];
     const andShapeQuads = shapesGraph?.getQuads(targetShape.shapeIri, sh("and"), null) ?? [];
     const parentShapeQuads = [
@@ -33,21 +44,53 @@ export function getPropertyValues({ focusNode, shapesGraph, dataGraph }: Options
     for (const parentShapeQuad of parentShapeQuads) {
       const propertyShapeQuads = shapesGraph?.getQuads(parentShapeQuad, sh("property"), null) ?? [];
       for (const propertyShapeQuad of propertyShapeQuads) {
+        const propertyQuads = shapesGraph?.getQuads(propertyShapeQuad.object) ?? [];
         const pathStartQuad = shapesGraph?.getQuads(propertyShapeQuad.object, sh("path"), null)[0];
         if (!pathStartQuad || !shapesGraph) continue;
         const path = extractPath(pathStartQuad, shapesGraph);
-        const predicatePath = path.map((p) => p.value).join(" / ");
-        const key = `${targetShape.focusNode?.value ?? "?"} :: ${predicatePath}`;
-        propertyValues.push({ path, predicatePath, key });
-        console.log(key);
+        if (path.length !== 1) throw new Error("Only single predicate paths are supported for now");
+        const valueNodes = dataGraph?.getQuads(targetShape.focusNode, path[0], null) ?? [];
+        propertyValues.push({ path, valueNodes, property: propertyQuads, shapesGraph, type: "shape" });
       }
     }
   }
 
-  return propertyValues;
+  for (const subject of [...subjects.values(), focusNode].filter(Boolean) as Term[]) {
+    const allSubjectQuads = dataGraph?.getQuads(subject, null, null) ?? [];
+    const allSubjectQuadsGrouped = new Map<string, Quad[]>();
+    for (const quad of allSubjectQuads) {
+      const quadsForPredicate = allSubjectQuadsGrouped.get(quad.predicate.value) ?? [];
+      quadsForPredicate.push(quad);
+      allSubjectQuadsGrouped.set(quad.predicate.value, quadsForPredicate);
+    }
+
+    for (const [predicate, quads] of allSubjectQuadsGrouped) {
+      const hasShape = propertyValues.find((pv) => pv.path[0].equals(DF.namedNode(predicate)));
+      if (!hasShape) {
+        propertyValues.push({
+          path: [DF.namedNode(predicate)],
+          valueNodes: quads,
+          property: [],
+          shapesGraph,
+          type: "data",
+        });
+      }
+    }
+  }
+
+  return propertyValues.toSorted((a, b) => {
+    const aOrder = a.property.find((quad) => quad.predicate.equals(sh("order")))?.object.value;
+    const bOrder = b.property.find((quad) => quad.predicate.equals(sh("order")))?.object.value;
+    if (aOrder && bOrder) return parseInt(aOrder) - parseInt(bOrder);
+    if (aOrder) return -1;
+    if (bOrder) return 1;
+    const aLabel = a.property.find((quad) => quad.predicate.equals(rdfs("label")))?.object.value ?? "";
+    const bLabel = b.property.find((quad) => quad.predicate.equals(rdfs("label")))?.object.value ?? "";
+    return aLabel.localeCompare(bLabel);
+  });
 }
 
-export function extractPath(pathQuad: Quad, shapesGraph: RdfStore): Term[] {
+export function extractPath(pathQuad: Quad, shapesGraph: RdfStore): Quad_Predicate[] {
   const lists = [rdf("first"), rdf("rest")];
   const variants = [
     sh("alternativePath"),
@@ -58,8 +101,8 @@ export function extractPath(pathQuad: Quad, shapesGraph: RdfStore): Term[] {
   ];
   const continuePredicates = [...lists, ...variants];
 
-  const trail: Term[] = [];
-  trail.push(pathQuad.object);
+  const trail: Quad_Predicate[] = [];
+  trail.push(pathQuad.object as Quad_Predicate);
 
   let lastTerm: Term | null = pathQuad.object;
 
@@ -69,7 +112,7 @@ export function extractPath(pathQuad: Quad, shapesGraph: RdfStore): Term[] {
       lastTerm = null;
       continue;
     }
-    trail.push(child.object);
+    trail.push(child.object as Quad_Predicate);
     const childEndsWithBlankNode = child.object.termType === "BlankNode" || child.object.value.includes("/genid/");
     const shouldContinue = continuePredicates.some((predicate) => child.predicate.equals(predicate));
     lastTerm = childEndsWithBlankNode || shouldContinue ? child.object : null;

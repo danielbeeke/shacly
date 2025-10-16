@@ -1,0 +1,47 @@
+.property-value-demo {
+    display: flex;
+    gap: 2rem;
+}
+
+.fields {
+    display: flex;
+    flex-direction: column;
+    max-width: 30vw;
+    width: 600px;
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    padding: 1rem;
+}
+
+.field {
+    margin-bottom: 1rem;
+    flex-basis: auto;
+    flex-shrink: 1;
+
+    &.grow {
+        flex-grow: 1;
+        display: flex;
+        flex-direction: column;
+    }
+
+    textarea {
+        width: 100%;
+        flex: 1 1 auto;
+    }
+}
+
+.label {
+    font-weight: bold;
+    display: block;
+}
+
+.value {
+    display: flex;
+    flex-direction: column;
+}
+
+.type {
+    font-weight: 200;
+    font-size: .8rem;
+}

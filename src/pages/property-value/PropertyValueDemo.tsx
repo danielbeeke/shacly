@@ -3,14 +3,17 @@ import { DataFactory } from "rdf-data-factory";
 import { useMemo } from "react";
 import { Parser } from "n3";
 import { useLocalStorage } from "@uidotdev/usehooks";
-import { getPropertyValues } from "./getPropertyValues";
-import type { NamedNode, Quad_Subject } from "@rdfjs/types";
+import { getPropertyValues, rdfs } from "./getPropertyValues";
+import type { Quad_Subject, Term } from "@rdfjs/types";
+import type { PropertyValue } from "./getPropertyValues";
 const DF = new DataFactory();
+import "./styles.scss";
+import { JsonLdContextNormalized } from "jsonld-context-parser";
 
 const examples = {
   "DCAT AP EU": {
     shapes: "https://semiceu.github.io/DCAT-AP/releases/3.0.0/shacl/dcat-ap-SHACL.ttl",
-    data: undefined,
+    data: "https://w3c.github.io/dxwg/dcat/examples/vocab-dcat-3/csiro-dap-examples.ttl",
     focusNode: undefined,
   },
 
@@ -24,10 +27,15 @@ const examples = {
 export default function PropertyValueDemo() {
   const [focusNode, setFocusNode] = useLocalStorage<string>("property-value-focus-node", "");
   const [shapesTurtle, setShapesTurtle] = useLocalStorage<string>("property-value-shapes-turtle", "");
-
   const [dataTurtle, setDataTurtle] = useLocalStorage<string>("property-value-data-turtle", "");
 
-  const { propertyValues, subjects } = useMemo(() => {
+  const [showEmptyPropertyValues, setShowEmptyPropertyValues] = useLocalStorage<boolean>(
+    "property-value-show-empty",
+    false,
+  );
+
+  const { propertyValues, subjects, context } = useMemo(() => {
+    const prefixes = {};
     const newShapesStore = RdfStore.createDefault();
     try {
       const shapesParser = new Parser({
@@ -36,6 +44,8 @@ export default function PropertyValueDemo() {
       });
       const shapesQuads = shapesParser.parse(shapesTurtle);
       for (const quad of shapesQuads) newShapesStore.addQuad(quad);
+      /** @ts-expect-error internal */
+      Object.assign(prefixes, shapesParser._prefixes);
     } catch (error) {
       console.error("Error parsing shapes turtle:", error);
     }
@@ -48,6 +58,8 @@ export default function PropertyValueDemo() {
       });
       const dataQuads = dataParser.parse(dataTurtle);
       for (const quad of dataQuads) newDataStore.addQuad(quad);
+      /** @ts-expect-error internal */
+      Object.assign(prefixes, dataParser._prefixes);
     } catch (error) {
       console.error("Error parsing data turtle:", error);
     }
@@ -63,56 +75,138 @@ export default function PropertyValueDemo() {
         shapesGraph: newShapesStore,
         dataGraph: newDataStore,
       }),
+      prefixes,
+      context: new JsonLdContextNormalized({ prefixes }),
       subjects: [...subjects.values()],
     };
   }, [shapesTurtle, dataTurtle, focusNode]);
 
+  const filteredPropertyValues = showEmptyPropertyValues
+    ? propertyValues
+    : propertyValues.filter((pv) => pv.valueNodes.length > 0);
+
   return (
-    <div>
-      <select>
-        <option value="">-- Select an example --</option>
-        {Object.entries(examples).map(([name, urls]) => (
-          <option
-            key={name}
-            value={name}
-            onClick={async () => {
-              if (urls.shapes) {
-                const shapesResponse = await fetch(urls.shapes);
-                const shapesText = await shapesResponse.text();
-                setShapesTurtle(shapesText);
-              }
+    <div className="property-value-demo">
+      <div className="fields">
+        <div className="field">
+          <label className="label">Example:</label>
+          <select>
+            <option value="">-- Select an example --</option>
+            {Object.entries(examples).map(([name, urls]) => (
+              <option
+                key={name}
+                value={name}
+                onClick={async () => {
+                  if (urls.shapes) {
+                    const shapesResponse = await fetch(urls.shapes);
+                    const shapesText = await shapesResponse.text();
+                    setShapesTurtle(shapesText);
+                  }
 
-              if (urls.data) {
-                const dataResponse = await fetch(urls.data);
-                const dataText = await dataResponse.text();
-                setDataTurtle(dataText);
-              } else {
-                setDataTurtle("");
-              }
+                  if (urls.data) {
+                    const dataResponse = await fetch(urls.data);
+                    const dataText = await dataResponse.text();
+                    setDataTurtle(dataText);
+                  } else {
+                    setDataTurtle("");
+                  }
 
-              if (urls.focusNode) {
-                setFocusNode(urls.focusNode);
-              } else {
-                setFocusNode("");
-              }
-            }}
-          >
-            {name}
-          </option>
+                  if (urls.focusNode) {
+                    setFocusNode(urls.focusNode);
+                  } else {
+                    setFocusNode("");
+                  }
+                }}
+              >
+                {name}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="field">
+          <label className="label">Focus Node:</label>
+          <select value={focusNode} onChange={(event) => setFocusNode(event.target.value)}>
+            {subjects.map((subject) => (
+              <option key={subject.value} value={subject.value}>
+                {subject.value}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="field grow">
+          <label className="label">Shapes Turtle:</label>
+          <textarea value={shapesTurtle} onChange={(e) => setShapesTurtle(e.target.value)}></textarea>
+        </div>
+
+        <div className="field grow">
+          <label className="label">Data Turtle:</label>
+          <textarea value={dataTurtle} onChange={(e) => setDataTurtle(e.target.value)}></textarea>
+        </div>
+      </div>
+
+      <output>
+        <h2>Property Values</h2>
+        <div className="field">
+          <label className="checkbox">
+            <input
+              type="checkbox"
+              checked={showEmptyPropertyValues}
+              onChange={(e) => setShowEmptyPropertyValues(e.target.checked)}
+            />
+            Show empty property values
+          </label>
+        </div>
+        {filteredPropertyValues.map((pv, index) => (
+          <PropertyValueElement key={index} {...pv} context={context} />
         ))}
-      </select>
-
-      <select value={focusNode} onChange={(event) => setFocusNode(event.target.value)}>
-        {subjects.map((subject) => (
-          <option key={subject.value} value={subject.value}>
-            {subject.value}
-          </option>
-        ))}
-      </select>
-
-      <textarea value={shapesTurtle} onChange={(e) => setShapesTurtle(e.target.value)}></textarea>
-
-      <textarea value={dataTurtle} onChange={(e) => setDataTurtle(e.target.value)}></textarea>
+      </output>
     </div>
   );
+}
+
+function PropertyValueElement({
+  path,
+  type,
+  valueNodes,
+  property,
+  context,
+}: PropertyValue & { context: JsonLdContextNormalized }) {
+  const labels = property.filter((quad) => quad.predicate.equals(rdfs("label"))).map((quad) => quad.object);
+  const label =
+    labels.find((l) => l.termType === "Literal" && l.language === "en")?.value ??
+    labels.find((l) => l.termType === "Literal" && l.language === "nl")?.value ??
+    labels.find((l) => l.termType === "Literal" && l.language === "")?.value ??
+    path.at(-1)?.value.split(/\/|#/).pop() ??
+    "Unknown property";
+
+  return (
+    <div className="field">
+      <label className="label" title={path[0].value}>
+        {label} <em className="type">{type}</em>
+      </label>
+      <div className="value">
+        {valueNodes.map((valueNode) => (
+          <Term key={valueNode.object.value} {...valueNode.object} context={context} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function Term({ value, termType, context }: Term & { context: JsonLdContextNormalized }) {
+  if (termType === "Literal") {
+    return <span className="term literal">{value}</span>;
+  }
+  if (termType === "BlankNode") {
+    return <span className="term blank-node">{value}</span>;
+  }
+  if (termType === "NamedNode") {
+    return (
+      <a className="term named-node" href={value} target="_blank" rel="noreferrer">
+        {context.compactIri(value, true)}
+      </a>
+    );
+  }
 }
