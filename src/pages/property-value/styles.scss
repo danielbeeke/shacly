@@ -45,3 +45,17 @@
     font-weight: 200;
     font-size: .8rem;
 }
+
+.blank-node-property {
+    padding-left: 1rem;
+    color: gray;
+
+    * {
+        color: gray;
+    }
+
+    .label,
+    .term {
+        display: inline-flex;
+    }
+}

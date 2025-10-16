@@ -22,6 +22,7 @@ export type PropertyValue = {
   shapes: Quad[][];
   type: "shape" | "data";
   shapesGraph?: RdfStore;
+  dataGraph?: RdfStore;
 };
 
 export type TargetShapeMatch = {
@@ -38,7 +39,10 @@ export function getPropertyValues({ focusNode, shapesGraph, dataGraph }: Options
 
   const propertyValues: PropertyValue[] = [];
   const subjects = [focusNode].filter(Boolean) as Term[];
-  const targetShapesGroupedByFocusNode = groupBy(targetShapes, (ts) => ts.focusNode?.value ?? "no-focus-node");
+  const targetShapesGroupedByFocusNode = groupBy(
+    targetShapes.length ? targetShapes : [undefined],
+    (ts) => ts?.focusNode?.value ?? focusNode?.value ?? "no-focus-node",
+  );
 
   for (const [focusNode, targetShapes] of targetShapesGroupedByFocusNode) {
     const focusNodeTerm = focusNode === "no-focus-node" ? undefined : DF.namedNode(focusNode);
@@ -48,13 +52,15 @@ export function getPropertyValues({ focusNode, shapesGraph, dataGraph }: Options
     const shapesPerPath = new Map();
 
     for (const targetShape of targetShapes) {
-      const nodeShapeQuads = shapesGraph?.getQuads(targetShape.shapeIri, sh("node"), null) ?? [];
-      const andShapeQuads = shapesGraph?.getQuads(targetShape.shapeIri, sh("and"), null) ?? [];
-      const parentShapeQuads = [
-        targetShape.shapeIri,
-        ...nodeShapeQuads.map((quad) => quad.object),
-        ...andShapeQuads.map((quad) => quad.object),
-      ];
+      const nodeShapeQuads = targetShape ? (shapesGraph?.getQuads(targetShape.shapeIri, sh("node"), null) ?? []) : [];
+      const andShapeQuads = targetShape ? (shapesGraph?.getQuads(targetShape.shapeIri, sh("and"), null) ?? []) : [];
+      const parentShapeQuads = targetShape
+        ? [
+            targetShape.shapeIri,
+            ...nodeShapeQuads.map((quad) => quad.object),
+            ...andShapeQuads.map((quad) => quad.object),
+          ]
+        : [];
       for (const parentShapeQuad of parentShapeQuads) {
         const propertyShapeQuads = shapesGraph?.getQuads(parentShapeQuad, sh("property"), null) ?? [];
         for (const propertyShapeQuad of propertyShapeQuads) {
@@ -83,7 +89,6 @@ export function getPropertyValues({ focusNode, shapesGraph, dataGraph }: Options
     for (const [pathValue, shapes] of shapesPerPath) {
       const path = [DF.namedNode(pathValue)];
       const valueNodes = dataGraph?.getQuads(DF.namedNode(focusNode), DF.namedNode(pathValue), null) ?? [];
-
       propertyValues.push({
         focusNode: DF.namedNode(focusNode),
         path,
@@ -91,6 +96,7 @@ export function getPropertyValues({ focusNode, shapesGraph, dataGraph }: Options
         shapes,
         type: shapes.length ? ("shape" as const) : ("data" as const),
         shapesGraph,
+        dataGraph,
       });
     }
   }

@@ -172,6 +172,7 @@ function PropertyValueElement({
   valueNodes,
   shapes,
   context,
+  dataGraph,
 }: PropertyValue & { context: JsonLdContextNormalized }) {
   const labels = shapes
     .flat()
@@ -191,19 +192,30 @@ function PropertyValueElement({
       </label>
       <div className="value">
         {valueNodes.map((valueNode) => (
-          <Term key={valueNode.object.value} {...valueNode.object} context={context} />
+          <Term key={valueNode.object.value} {...valueNode.object} dataGraph={dataGraph} context={context} />
         ))}
       </div>
     </div>
   );
 }
 
-function Term({ value, termType, context }: Term & { context: JsonLdContextNormalized }) {
+function Term({ context, dataGraph, ...term }: Term & { context: JsonLdContextNormalized; dataGraph?: RdfStore }) {
+  const { value, termType } = term;
   if (termType === "Literal") {
     return <span className="term literal">{value}</span>;
   }
   if (termType === "BlankNode") {
-    return <span className="term blank-node">{value}</span>;
+    const children = dataGraph?.getQuads(term, null, null) ?? [];
+    if (children.length > 0) {
+      return children.map((quad) => (
+        <div key={JSON.stringify(quad)} className="blank-node-property">
+          <label className="label">{quad.predicate.value.split(/\/|#/g).pop()!}</label>: &nbsp;
+          <Term {...quad.object} context={context} dataGraph={dataGraph} />
+        </div>
+      ));
+    } else {
+      return <span className="term blank-node">{value}</span>;
+    }
   }
   if (termType === "NamedNode") {
     return (
