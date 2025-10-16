@@ -1,6 +1,7 @@
 import type { NamedNode, Quad, Quad_Predicate, Quad_Subject, Term } from "@rdfjs/types";
 import type { RdfStore } from "rdf-stores";
 import { DataFactory } from "rdf-data-factory";
+import { groupBy } from "./helpers";
 const DF = new DataFactory();
 
 export const sh = (localName: string = "") => DF.namedNode("http://www.w3.org/ns/shacl#" + localName);
@@ -17,7 +18,7 @@ type Options = {
 export type PropertyValue = {
   path: Quad_Predicate[];
   valueNodes: Quad[];
-  property: Quad[];
+  shapes: Quad[][];
   type: "shape" | "data";
   shapesGraph?: RdfStore;
 };
@@ -50,19 +51,14 @@ export function getPropertyValues({ focusNode, shapesGraph, dataGraph }: Options
         const path = extractPath(pathStartQuad, shapesGraph);
         if (path.length !== 1) throw new Error("Only single predicate paths are supported for now");
         const valueNodes = dataGraph?.getQuads(targetShape.focusNode, path[0], null) ?? [];
-        propertyValues.push({ path, valueNodes, property: propertyQuads, shapesGraph, type: "shape" });
+        propertyValues.push({ path, valueNodes, shapes: [propertyQuads], shapesGraph, type: "shape" });
       }
     }
   }
 
   for (const subject of [...subjects.values(), focusNode].filter(Boolean) as Term[]) {
     const allSubjectQuads = dataGraph?.getQuads(subject, null, null) ?? [];
-    const allSubjectQuadsGrouped = new Map<string, Quad[]>();
-    for (const quad of allSubjectQuads) {
-      const quadsForPredicate = allSubjectQuadsGrouped.get(quad.predicate.value) ?? [];
-      quadsForPredicate.push(quad);
-      allSubjectQuadsGrouped.set(quad.predicate.value, quadsForPredicate);
-    }
+    const allSubjectQuadsGrouped = groupBy(allSubjectQuads, (quad) => quad.predicate.value);
 
     for (const [predicate, quads] of allSubjectQuadsGrouped) {
       const hasShape = propertyValues.find((pv) => pv.path[0].equals(DF.namedNode(predicate)));
@@ -70,7 +66,7 @@ export function getPropertyValues({ focusNode, shapesGraph, dataGraph }: Options
         propertyValues.push({
           path: [DF.namedNode(predicate)],
           valueNodes: quads,
-          property: [],
+          shapes: [],
           shapesGraph,
           type: "data",
         });
@@ -78,14 +74,26 @@ export function getPropertyValues({ focusNode, shapesGraph, dataGraph }: Options
     }
   }
 
-  return propertyValues.toSorted((a, b) => {
-    const aOrder = a.property.find((quad) => quad.predicate.equals(sh("order")))?.object.value;
-    const bOrder = b.property.find((quad) => quad.predicate.equals(sh("order")))?.object.value;
+  const propertyValueMap: Map<string, PropertyValue> = new Map();
+  for (const pv of propertyValues) {
+    const key = pv.path.map((p) => p.value).join("|");
+    propertyValueMap.set(key, {
+      path: pv.path,
+      valueNodes: [...(propertyValueMap.get(key)?.valueNodes ?? []), ...pv.valueNodes],
+      shapes: [...(propertyValueMap.get(key)?.shapes ?? []), ...pv.shapes],
+      shapesGraph: pv.shapesGraph,
+      type: pv.type,
+    });
+  }
+
+  return [...propertyValueMap.values()].toSorted((a, b) => {
+    const aOrder = a.shapes.flat().find((quad) => quad.predicate.equals(sh("order")))?.object.value;
+    const bOrder = b.shapes.flat().find((quad) => quad.predicate.equals(sh("order")))?.object.value;
     if (aOrder && bOrder) return parseInt(aOrder) - parseInt(bOrder);
     if (aOrder) return -1;
     if (bOrder) return 1;
-    const aLabel = a.property.find((quad) => quad.predicate.equals(rdfs("label")))?.object.value ?? "";
-    const bLabel = b.property.find((quad) => quad.predicate.equals(rdfs("label")))?.object.value ?? "";
+    const aLabel = a.shapes.flat().find((quad) => quad.predicate.equals(rdfs("label")))?.object.value ?? "";
+    const bLabel = b.shapes.flat().find((quad) => quad.predicate.equals(rdfs("label")))?.object.value ?? "";
     return aLabel.localeCompare(bLabel);
   });
 }

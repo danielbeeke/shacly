@@ -170,10 +170,13 @@ function PropertyValueElement({
   path,
   type,
   valueNodes,
-  property,
+  shapes,
   context,
 }: PropertyValue & { context: JsonLdContextNormalized }) {
-  const labels = property.filter((quad) => quad.predicate.equals(rdfs("label"))).map((quad) => quad.object);
+  const labels = shapes
+    .flat()
+    .filter((quad) => quad.predicate.equals(rdfs("label")))
+    .map((quad) => quad.object);
   const label =
     labels.find((l) => l.termType === "Literal" && l.language === "en")?.value ??
     labels.find((l) => l.termType === "Literal" && l.language === "nl")?.value ??
