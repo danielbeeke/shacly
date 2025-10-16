@@ -174,6 +174,7 @@ function PropertyValueElement({
   context,
   dataGraph,
 }: PropertyValue & { context: JsonLdContextNormalized }) {
+  console.log(shapes);
   const labels = shapes
     .flat()
     .filter((quad) => quad.predicate.equals(rdfs("label")))

@@ -65,10 +65,11 @@ export function getPropertyValues({ focusNode, shapesGraph, dataGraph }: Options
         const propertyShapeQuads = shapesGraph?.getQuads(parentShapeQuad, sh("property"), null) ?? [];
         for (const propertyShapeQuad of propertyShapeQuads) {
           const pathQuad = shapesGraph?.getQuads(propertyShapeQuad.object, sh("path"), null)[0];
+          const propertyShapeQuadsProperties = shapesGraph?.getQuads(propertyShapeQuad.object) ?? [];
           if (!pathQuad) continue;
           const predicate = pathQuad.object.value;
           const pathShapes = shapesPerPath.get(predicate) ?? [];
-          shapesPerPath.set(predicate, [...pathShapes, propertyShapeQuads]);
+          shapesPerPath.set(predicate, [...pathShapes, propertyShapeQuadsProperties]);
         }
       }
     }
@@ -80,8 +81,7 @@ export function getPropertyValues({ focusNode, shapesGraph, dataGraph }: Options
       for (const [predicate] of allSubjectQuadsGroupedByPredicate) {
         const hasShape = propertyValues.find((pv) => pv.path[0].equals(DF.namedNode(predicate)));
         if (!hasShape) {
-          const pathShapes = shapesPerPath.get(predicate) ?? [];
-          shapesPerPath.set(predicate, pathShapes);
+          if (!shapesPerPath.has(predicate)) shapesPerPath.set(predicate, []);
         }
       }
     }
@@ -100,6 +100,8 @@ export function getPropertyValues({ focusNode, shapesGraph, dataGraph }: Options
       });
     }
   }
+
+  console.log(propertyValues);
 
   return propertyValues;
 }
