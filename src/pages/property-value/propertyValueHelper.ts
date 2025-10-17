@@ -21,7 +21,8 @@ export const propertyValueHelper = (propertyValue: PropertyValue) => {
         .filter((quad) => quad.predicate.equals(sh("minCount")))
         .map((quad) => parseFloat(quad.object.value));
 
-      return Math.max(...counts);
+      const minCount = Math.max(...counts);
+      return minCount === -Infinity ? undefined : minCount;
     },
     get maxCount() {
       const counts = propertyValue.shapes
@@ -29,7 +30,8 @@ export const propertyValueHelper = (propertyValue: PropertyValue) => {
         .filter((quad) => quad.predicate.equals(sh("maxCount")))
         .map((quad) => parseFloat(quad.object.value));
 
-      return Math.min(...counts);
+      const maxCount = Math.min(...counts);
+      return maxCount === Infinity ? undefined : maxCount;
     },
   };
 };

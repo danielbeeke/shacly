@@ -176,6 +176,22 @@ function PropertyValueElement({ context, ...propertyValue }: PropertyValue & { c
       <label className="label" title={path[0].value}>
         {pv.label} <em className="type">{type}</em>
       </label>
+
+      <div className="properties">
+        {pv.minCount !== undefined ? (
+          <>
+            <label className="label">Min count</label>: {pv.minCount}
+            <br />
+          </>
+        ) : null}
+        {pv.maxCount !== undefined ? (
+          <>
+            <label className="label">Max count</label>: {pv.maxCount}
+            <br />
+          </>
+        ) : null}
+      </div>
+
       <details className="value">
         <summary>Values</summary>
         {valueNodes.map((valueNode) => (
