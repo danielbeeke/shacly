@@ -9,6 +9,7 @@ import type { PropertyValue } from "./getPropertyValues";
 const DF = new DataFactory();
 import "./styles.scss";
 import { JsonLdContextNormalized } from "jsonld-context-parser";
+import { propertyValueHelper } from "./propertyValueHelper";
 
 const examples = {
   "DCAT AP EU": {
@@ -147,7 +148,7 @@ export default function PropertyValueDemo() {
       </div>
 
       <output>
-        <h2>Property Values</h2>
+        <h2>Property Values demo</h2>
         <div className="field">
           <label className="checkbox">
             <input
@@ -166,36 +167,21 @@ export default function PropertyValueDemo() {
   );
 }
 
-function PropertyValueElement({
-  path,
-  type,
-  valueNodes,
-  shapes,
-  context,
-  dataGraph,
-}: PropertyValue & { context: JsonLdContextNormalized }) {
-  console.log(shapes);
-  const labels = shapes
-    .flat()
-    .filter((quad) => quad.predicate.equals(rdfs("label")))
-    .map((quad) => quad.object);
-  const label =
-    labels.find((l) => l.termType === "Literal" && l.language === "en")?.value ??
-    labels.find((l) => l.termType === "Literal" && l.language === "nl")?.value ??
-    labels.find((l) => l.termType === "Literal" && l.language === "")?.value ??
-    path.at(-1)?.value.split(/\/|#/).pop() ??
-    "Unknown property";
+function PropertyValueElement({ context, ...propertyValue }: PropertyValue & { context: JsonLdContextNormalized }) {
+  const { path, type, valueNodes, shapes, dataGraph } = propertyValue;
+  const pv = propertyValueHelper(propertyValue);
 
   return (
     <div className="field">
       <label className="label" title={path[0].value}>
-        {label} <em className="type">{type}</em>
+        {pv.label} <em className="type">{type}</em>
       </label>
-      <div className="value">
+      <details className="value">
+        <summary>Values</summary>
         {valueNodes.map((valueNode) => (
           <Term key={valueNode.object.value} {...valueNode.object} dataGraph={dataGraph} context={context} />
         ))}
-      </div>
+      </details>
     </div>
   );
 }

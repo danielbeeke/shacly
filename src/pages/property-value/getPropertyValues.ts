@@ -16,7 +16,7 @@ type Options = {
 };
 
 export type PropertyValue = {
-  focusNode: Term;
+  focusNode?: Term;
   path: Quad_Predicate[];
   valueNodes: Quad[];
   shapes: Quad[][];
@@ -26,7 +26,7 @@ export type PropertyValue = {
 };
 
 export type TargetShapeMatch = {
-  focusNode?: Term;
+  focusNode: Term;
   shapeIri: Quad_Subject;
 };
 
@@ -40,20 +40,28 @@ export function getPropertyValues({ focusNode, shapesGraph, dataGraph }: Options
   const propertyValues: PropertyValue[] = [];
   const subjects = [focusNode].filter(Boolean) as Term[];
   const targetShapesGroupedByFocusNode = groupBy(
-    targetShapes.length ? targetShapes : [undefined],
-    (ts) => ts?.focusNode?.value ?? focusNode?.value ?? "no-focus-node",
+    [
+      ...targetShapes,
+      {
+        focusNode,
+        shapeIri: undefined,
+      },
+    ],
+    // We need to go through the next for of loop, evening if no shapes match.
+    (ts) => ts.focusNode?.value ?? "_data_only",
   );
 
   for (const [focusNode, targetShapes] of targetShapesGroupedByFocusNode) {
-    const focusNodeTerm = focusNode === "no-focus-node" ? undefined : DF.namedNode(focusNode);
-    if (focusNodeTerm && !subjects.find((s) => s.equals(focusNodeTerm))) {
-      subjects.push(focusNodeTerm);
-    }
+    const focusNodeTerm = focusNode === "_data_only" ? undefined : DF.namedNode(focusNode);
+    if (focusNodeTerm && !subjects.find((s) => s.equals(focusNodeTerm))) subjects.push(focusNodeTerm);
+
     const shapesPerPath = new Map();
 
     for (const targetShape of targetShapes) {
-      const nodeShapeQuads = targetShape ? (shapesGraph?.getQuads(targetShape.shapeIri, sh("node"), null) ?? []) : [];
-      const andShapeQuads = targetShape ? (shapesGraph?.getQuads(targetShape.shapeIri, sh("and"), null) ?? []) : [];
+      const nodeShapeQuads = targetShape.shapeIri
+        ? (shapesGraph?.getQuads(targetShape.shapeIri, sh("node")) ?? [])
+        : [];
+      const andShapeQuads = targetShape.shapeIri ? (shapesGraph?.getQuads(targetShape.shapeIri, sh("and")) ?? []) : [];
       const parentShapeQuads = targetShape
         ? [
             targetShape.shapeIri,
@@ -62,9 +70,9 @@ export function getPropertyValues({ focusNode, shapesGraph, dataGraph }: Options
           ]
         : [];
       for (const parentShapeQuad of parentShapeQuads) {
-        const propertyShapeQuads = shapesGraph?.getQuads(parentShapeQuad, sh("property"), null) ?? [];
+        const propertyShapeQuads = shapesGraph?.getQuads(parentShapeQuad, sh("property")) ?? [];
         for (const propertyShapeQuad of propertyShapeQuads) {
-          const pathQuad = shapesGraph?.getQuads(propertyShapeQuad.object, sh("path"), null)[0];
+          const pathQuad = shapesGraph?.getQuads(propertyShapeQuad.object, sh("path"))[0];
           const propertyShapeQuadsProperties = shapesGraph?.getQuads(propertyShapeQuad.object) ?? [];
           if (!pathQuad) continue;
           const predicate = pathQuad.object.value;
@@ -74,8 +82,8 @@ export function getPropertyValues({ focusNode, shapesGraph, dataGraph }: Options
       }
     }
 
-    for (const subject of [...subjects.values(), focusNode].filter(Boolean) as Term[]) {
-      const allSubjectQuads = dataGraph?.getQuads(subject, null, null) ?? [];
+    for (const subject of [...subjects.values()]) {
+      const allSubjectQuads = dataGraph?.getQuads(subject) ?? [];
       const allSubjectQuadsGroupedByPredicate = groupBy(allSubjectQuads, (quad) => quad.predicate.value);
 
       for (const [predicate] of allSubjectQuadsGroupedByPredicate) {
@@ -88,9 +96,11 @@ export function getPropertyValues({ focusNode, shapesGraph, dataGraph }: Options
 
     for (const [pathValue, shapes] of shapesPerPath) {
       const path = [DF.namedNode(pathValue)];
-      const valueNodes = dataGraph?.getQuads(DF.namedNode(focusNode), DF.namedNode(pathValue), null) ?? [];
+      const valueNodes = focusNodeTerm
+        ? (dataGraph?.getQuads(DF.namedNode(focusNode), DF.namedNode(pathValue)) ?? [])
+        : [];
       propertyValues.push({
-        focusNode: DF.namedNode(focusNode),
+        focusNode: focusNodeTerm,
         path,
         valueNodes,
         shapes,
@@ -101,40 +111,7 @@ export function getPropertyValues({ focusNode, shapesGraph, dataGraph }: Options
     }
   }
 
-  console.log(propertyValues);
-
   return propertyValues;
-}
-
-export function extractPath(pathQuad: Quad, shapesGraph: RdfStore): Quad_Predicate[] {
-  const lists = [rdf("first"), rdf("rest")];
-  const variants = [
-    sh("alternativePath"),
-    sh("zeroOrMorePath"),
-    sh("oneOrMorePath"),
-    sh("zeroOrOnePath"),
-    sh("inversePath"),
-  ];
-  const continuePredicates = [...lists, ...variants];
-
-  const trail: Quad_Predicate[] = [];
-  trail.push(pathQuad.object as Quad_Predicate);
-
-  let lastTerm: Term | null = pathQuad.object;
-
-  while (lastTerm) {
-    const [child] = shapesGraph.getQuads(lastTerm);
-    if (!child) {
-      lastTerm = null;
-      continue;
-    }
-    trail.push(child.object as Quad_Predicate);
-    const childEndsWithBlankNode = child.object.termType === "BlankNode" || child.object.value.includes("/genid/");
-    const shouldContinue = continuePredicates.some((predicate) => child.predicate.equals(predicate));
-    lastTerm = childEndsWithBlankNode || shouldContinue ? child.object : null;
-  }
-
-  return trail;
 }
 
 // See https://w3c.github.io/data-shapes/shacl/#targets
